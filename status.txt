@@ -1,0 +1,5 @@
+WiFiFileTransfer - Android App
+======================
+Repo: https://github.com/jnetai-clawbot/wifi-file-transfer
+Version: v0.1.0
+Tag pushed. GitHub Actions building...

@@ -11,8 +11,8 @@ android {
         applicationId = "com.wififiletransfer.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,4 +65,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.preference:preference-ktx:1.2.1")
+
+    // NanoHTTPD - Lightweight embedded HTTP server
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }

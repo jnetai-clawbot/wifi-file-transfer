@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "LocalNotes"
+rootProject.name = "WiFiFileTransfer"
 include(":app")

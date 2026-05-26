@@ -1,6 +1,5 @@
 /**
- * Local Notes - Main Application JavaScript
- * Fully functional markdown notes editor with bridge integration
+ * WiFi File Transfer - Main Application JavaScript
  */
 
 (function() {
@@ -8,323 +7,262 @@
 
     // ===== State =====
     const state = {
-        notes: [],
-        currentNote: null,
-        isDirty: false,
-        isPreview: false,
-        autoSaveTimer: null,
-        searchQuery: '',
+        serverRunning: false,
+        serverUrl: '',
+        serverPort: 8080,
+        localIp: '',
+        files: [],
         settings: {
-            fontSize: 16,
-            autoSave: true,
-            autoSaveInterval: 3000,
-            darkMode: true
+            autoStart: false,
+            keepScreenOn: true,
+            port: 8080
         }
     };
 
-    // ===== DOM References =====
+    // ===== DOM =====
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
 
     const dom = {};
     function cacheDom() {
-        dom.noteList = $('#noteList');
-        dom.noteTitle = $('#noteTitle');
-        dom.noteContent = $('#noteContent');
-        dom.previewPane = $('#previewPane');
-        dom.emptyState = $('#emptyState');
-        dom.editorArea = $('#editorArea');
-        dom.noteCount = $('#noteCount');
-        dom.searchInput = $('#searchInput');
-        dom.newNoteBtn = $('#newNoteBtn');
-        dom.saveBtn = $('#saveBtn');
-        dom.deleteBtn = $('#deleteBtn');
-        dom.tabEdit = $('#tabEdit');
-        dom.tabPreview = $('#tabPreview');
+        dom.statusDot = $('#statusDot');
+        dom.statusText = $('#statusText');
+        dom.serverInfo = $('#serverInfo');
+        dom.serverAddress = $('#serverAddress');
+        dom.serverPort = $('#serverPort');
+        dom.serverToggleBtn = $('#serverToggleBtn');
+        dom.serverBtnIcon = $('#serverBtnIcon');
+        dom.serverBtnText = $('#serverBtnText');
+        dom.quickConnectCard = $('#quickConnectCard');
+        dom.qrcodeContainer = $('#qrcodeContainer');
+        dom.qrcode = $('#qrcode');
+        dom.fileList = $('#fileList');
+        dom.fileCount = $('#fileCount');
+        dom.copyAddressBtn = $('#copyAddressBtn');
         dom.settingsBtn = $('#settingsBtn');
         dom.aboutBtn = $('#aboutBtn');
-        dom.menuBtn = $('#menuBtn');
-        dom.sidebar = $('#sidebar');
         dom.settingsModal = $('#settingsModal');
         dom.aboutModal = $('#aboutModal');
         dom.toast = $('#toast');
-        dom.fontSizeSlider = $('#fontSizeSlider');
-        dom.fontSizeValue = $('#fontSizeValue');
-        dom.autoSaveToggle = $('#autoSaveToggle');
-        dom.darkModeToggle = $('#darkModeToggle');
+        dom.portInput = $('#portInput');
+        dom.autoStartToggle = $('#autoStartToggle');
+        dom.keepScreenOnToggle = $('#keepScreenOnToggle');
         dom.versionDisplay = $('#versionDisplay');
         dom.checkUpdateBtn = $('#checkUpdateBtn');
         dom.shareAppBtn = $('#shareAppBtn');
         dom.modalCloseBtns = $$('.modal-close-btn');
     }
 
-    // ===== Markdown Parser =====
-    function renderMarkdown(text) {
-        if (!text) return '<p style="color: var(--text-muted);">Start writing your note...</p>';
-
-        let html = text;
-
-        // Escape HTML
-        html = html.replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        // Headers
-        html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
-        html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
-        html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-        // Bold and italic
-        html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-        html = html.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
-        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-        html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-
-        // Strikethrough
-        html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
-
-        // Inline code
-        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-        // Links
-        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-        // Images
-        html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />');
-
-        // Blockquotes
-        html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-
-        // Horizontal rule
-        html = html.replace(/^---$/gm, '<hr>');
-        html = html.replace(/^\*\*\*$/gm, '<hr>');
-        html = html.replace(/^___$/gm, '<hr>');
-
-        // Unordered lists
-        html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li>$1</li>');
-        html = html.replace(/(<li>.*<\/li>\n?)+/g, function(match) {
-            return '<ul>' + match.replace(/\n/g, '') + '</ul>';
-        });
-
-        // Ordered lists
-        html = html.replace(/^[\s]*\d+\.\s+(.+)$/gm, '<li>$1</li>');
-        html = html.replace(/(?:^<li>.*<\/li>\n?)+/g, function(match, offset, str) {
-            // Only wrap if they were sequential numbered items
-            return '<ol>' + match.replace(/\n/g, '') + '</ol>';
-        });
-
-        // Fenced code blocks
-        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
-            return '<pre><code class="language-' + lang + '">' + code.trim() + '</code></pre>';
-        });
-
-        // Paragraphs - wrap remaining lines
-        html = html.replace(/^([^<].+)$/gm, '<p>$1</p>');
-
-        // Clean up nested paragraphs
-        html = html.replace(/<p><\/p>/g, '');
-        html = html.replace(/<p><li>/g, '<li>');
-        html = html.replace(/<\/li><\/p>/g, '</li>');
-
-        return html;
-    }
-
-    // ===== Note Management =====
-    function loadNotes() {
+    // ===== Server Control =====
+    function startServer() {
+        const port = parseInt(dom.portInput.value) || 8080;
+        state.serverPort = port;
         try {
-            const notesJson = AndroidBridge.getNotes();
-            state.notes = JSON.parse(notesJson) || [];
-
-            // Sort by updatedAt descending
-            state.notes.sort((a, b) => (b.updatedAt || b.timestamp) - (a.updatedAt || a.timestamp));
-
-            renderNoteList();
-            updateNoteCount();
-
-            // If we have a current note, re-select it
-            if (state.currentNote && !state.notes.find(n => n.timestamp === state.currentNote.timestamp)) {
-                if (state.notes.length > 0) {
-                    selectNote(state.notes[0].timestamp);
-                } else {
-                    clearEditor();
-                }
-            } else if (!state.currentNote && state.notes.length > 0) {
-                selectNote(state.notes[0].timestamp);
-            }
+            AndroidBridge.startServer(port);
+            showToast('Starting server...');
         } catch (e) {
-            console.error('Error loading notes:', e);
-            state.notes = [];
-            renderNoteList();
+            showToast('Error starting server');
         }
     }
 
-    function saveCurrentNote() {
-        if (!state.currentNote) return;
-
-        const title = dom.noteTitle.value.trim() || 'Untitled';
-        const content = dom.noteContent.value;
-
-        if (content === '' && title === 'Untitled') return;
-
-        const now = Date.now();
-        state.currentNote.title = title;
-        state.currentNote.content = content;
-        state.currentNote.updatedAt = now;
-
+    function stopServer() {
         try {
-            AndroidBridge.saveNote(title, content, state.currentNote.timestamp);
-            state.isDirty = false;
-            showToast('Note saved');
-            updateLastSaved();
-            loadNotes(); // Refresh list
+            AndroidBridge.stopServer();
+            showToast('Server stopped');
         } catch (e) {
-            console.error('Error saving note:', e);
-            showToast('Error saving note');
+            showToast('Error stopping server');
         }
     }
 
-    function selectNote(timestamp) {
-        const note = state.notes.find(n => n.timestamp === timestamp);
-        if (!note) return;
-
-        // Save current if dirty
-        if (state.isDirty && state.currentNote) {
-            saveCurrentNote();
+    function toggleServer() {
+        if (state.serverRunning) {
+            stopServer();
+        } else {
+            startServer();
         }
-
-        state.currentNote = note;
-
-        dom.noteTitle.value = note.title || '';
-        dom.noteContent.value = note.content || '';
-        dom.emptyState.style.display = 'none';
-        dom.editorArea.style.display = 'flex';
-
-        // Close sidebar on mobile
-        dom.sidebar.classList.remove('open');
-
-        updatePreview();
-        renderNoteList();
-        state.isDirty = false;
     }
 
-    function createNewNote() {
-        // Save current if dirty
-        if (state.isDirty && state.currentNote) {
-            saveCurrentNote();
+    // Called from Android via evaluateJavascript
+    function onServerStatus(status, url, port) {
+        state.serverRunning = (status === 'running');
+        state.serverUrl = url;
+        state.serverPort = port;
+
+        updateServerUI();
+
+        if (state.serverRunning) {
+            loadFiles();
         }
+    }
 
-        const now = Date.now();
-        const newNote = {
-            title: '',
-            content: '',
-            timestamp: now,
-            updatedAt: now
-        };
+    // Called from Android on error
+    function onServerError(error) {
+        state.serverRunning = false;
+        updateServerUI();
+        showToast('Server error: ' + error);
+    }
 
-        // Save immediately to have a file
+    // Called from Android when a new file arrives
+    function onFileReceived(filename, size) {
+        showToast('📥 Received: ' + filename + ' (' + formatFileSize(size) + ')');
+        loadFiles();
+    }
+
+    function updateServerUI() {
+        if (state.serverRunning) {
+            dom.statusDot.className = 'status-dot online';
+            dom.statusText.textContent = 'Online';
+            dom.serverInfo.style.display = 'block';
+            dom.serverAddress.textContent = state.serverUrl;
+            dom.serverPort.textContent = state.serverPort;
+            dom.serverBtnText.textContent = 'Stop Server';
+            dom.serverBtnIcon.innerHTML = `
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="4" width="4" height="16" rx="1"/>
+                    <rect x="14" y="4" width="4" height="16" rx="1"/>
+                </svg>`;
+            dom.serverToggleBtn.classList.add('active');
+            dom.quickConnectCard.style.display = 'block';
+            generateQRCode(state.serverUrl);
+        } else {
+            dom.statusDot.className = 'status-dot offline';
+            dom.statusText.textContent = 'Offline';
+            dom.serverInfo.style.display = 'none';
+            dom.serverBtnText.textContent = 'Start Server';
+            dom.serverBtnIcon.innerHTML = `
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>`;
+            dom.serverToggleBtn.classList.remove('active');
+            dom.quickConnectCard.style.display = 'none';
+        }
+    }
+
+    // ===== QR Code =====
+    function generateQRCode(url) {
+        dom.qrcode.innerHTML = '';
         try {
-            AndroidBridge.saveNote('', '', now);
+            new QRCode(dom.qrcode, {
+                text: url,
+                width: 180,
+                height: 180,
+                colorDark: '#e6edf3',
+                colorLight: '#0d1117',
+                correctLevel: QRCode.CorrectLevel.H
+            });
         } catch (e) {
-            console.error('Error creating note:', e);
+            // QR library not available, show fallback
+            dom.qrcode.innerHTML = `
+                <div style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;
+                    border:2px dashed #30363d;border-radius:8px;color:#8b949e;font-size:12px;text-align:center;padding:8px;">
+                    Scan QR in browser:<br><span style="font-size:11px;word-break:break-all;">${url}</span>
+                </div>`;
         }
-
-        state.currentNote = newNote;
-        dom.noteTitle.value = '';
-        dom.noteContent.value = '';
-        dom.noteTitle.focus();
-        dom.emptyState.style.display = 'none';
-        dom.editorArea.style.display = 'flex';
-
-        // Close sidebar on mobile
-        dom.sidebar.classList.remove('open');
-
-        updatePreview();
-        loadNotes();
-        state.isDirty = false;
     }
 
-    function deleteCurrentNote() {
-        if (!state.currentNote) return;
-
-        if (!confirm('Delete this note? This cannot be undone.')) return;
-
+    // ===== File Management =====
+    function loadFiles() {
         try {
-            AndroidBridge.deleteNote(state.currentNote.timestamp);
-            state.currentNote = null;
-            loadNotes();
-            if (state.notes.length > 0) {
-                selectNote(state.notes[0].timestamp);
-            } else {
-                clearEditor();
-            }
-            showToast('Note deleted');
+            const filesJson = AndroidBridge.getReceivedFiles();
+            state.files = JSON.parse(filesJson) || [];
+            renderFileList();
         } catch (e) {
-            console.error('Error deleting note:', e);
-            showToast('Error deleting note');
+            console.error('Error loading files:', e);
+            state.files = [];
+            renderFileList();
         }
     }
 
-    function clearEditor() {
-        state.currentNote = null;
-        dom.noteTitle.value = '';
-        dom.noteContent.value = '';
-        dom.emptyState.style.display = 'flex';
-        dom.editorArea.style.display = 'none';
-    }
-
-    // ===== Rendering =====
-    function renderNoteList() {
-        let filtered = state.notes;
-        if (state.searchQuery) {
-            const q = state.searchQuery.toLowerCase();
-            filtered = state.notes.filter(n =>
-                (n.title || '').toLowerCase().includes(q) ||
-                (n.content || '').toLowerCase().includes(q)
-            );
-        }
-
-        if (filtered.length === 0) {
-            dom.noteList.innerHTML = `
-                <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">
-                    ${state.searchQuery ? 'No notes match your search' : 'No notes yet. Create one!'}
-                </div>
-            `;
+    function renderFileList() {
+        if (state.files.length === 0) {
+            dom.fileList.innerHTML = `
+                <div class="empty-files">
+                    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="12" y1="18" x2="12" y2="12"/>
+                        <line x1="9" y1="15" x2="15" y2="15"/>
+                    </svg>
+                    <p>No files received yet</p>
+                    <p class="empty-hint">Start the server and upload files from your computer</p>
+                </div>`;
+            dom.fileCount.textContent = '0 files';
             return;
         }
 
-        dom.noteList.innerHTML = filtered.map(note => {
-            const isActive = state.currentNote && state.currentNote.timestamp === note.timestamp;
-            const preview = (note.content || '').replace(/[#*`\[\]>-]/g, '').substring(0, 60).trim() || 'Empty note';
-            const date = formatDate(note.updatedAt || note.timestamp);
-            const title = note.title || 'Untitled';
+        dom.fileCount.textContent = state.files.length + ' file' + (state.files.length !== 1 ? 's' : '');
+
+        dom.fileList.innerHTML = state.files.map((file, index) => {
+            const icon = getFileIcon(file.name);
+            const size = formatFileSize(file.size);
+            const date = formatDate(file.timestamp);
 
             return `
-                <div class="note-list-item ${isActive ? 'active' : ''}" data-timestamp="${note.timestamp}" onclick="app.selectNote(${note.timestamp})">
-                    <div class="note-title">${escapeHtml(title)}</div>
-                    <div class="note-preview">${escapeHtml(preview)}</div>
-                    <div class="note-date">${date}</div>
+                <div class="file-item" data-index="${index}">
+                    <div class="file-icon">${icon}</div>
+                    <div class="file-details">
+                        <div class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="file-meta">
+                            <span class="file-size">${size}</span>
+                            <span class="file-separator">·</span>
+                            <span class="file-date">${date}</span>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="btn-icon btn-small" onclick="window.app.openFile('${escapeJs(file.name)}')" title="Open file">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                <polyline points="15 3 21 3 21 9"/>
+                                <line x1="10" y1="14" x2="21" y2="3"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon btn-small" onclick="window.app.shareFile('${escapeJs(file.name)}')" title="Share file">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="18" cy="5" r="3"/>
+                                <circle cx="6" cy="12" r="3"/>
+                                <circle cx="18" cy="19" r="3"/>
+                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
     }
 
-    function updatePreview() {
-        dom.previewPane.innerHTML = renderMarkdown(dom.noteContent.value);
+    function getFileIcon(filename) {
+        const ext = filename.split('.').pop()?.toLowerCase() || '';
+        const icons = {
+            'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image', 'webp': 'image',
+            'mp4': 'video', 'mkv': 'video', 'mov': 'video', 'avi': 'video',
+            'mp3': 'audio', 'wav': 'audio', 'flac': 'audio', 'aac': 'audio',
+            'pdf': 'pdf', 'doc': 'doc', 'docx': 'doc',
+            'zip': 'archive', 'rar': 'archive', 'tar': 'archive', 'gz': 'archive', '7z': 'archive',
+            'apk': 'apk', 'txt': 'text', 'md': 'text'
+        };
+        const type = icons[ext] || 'generic';
+
+        const svgIcons = {
+            'image': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#58a6ff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+            'video': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#f0883e" stroke-width="2"><rect x="2" y="4" width="18" height="16" rx="2"/><polygon points="10,8 16,12 10,16" fill="#f0883e" stroke="none"/></svg>',
+            'audio': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#a371f7" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+            'pdf': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#f85149" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><text x="8" y="16" fill="#f85149" font-size="8" font-weight="bold">PDF</text></svg>',
+            'apk': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#3fb950" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+            'archive': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#d2a8ff" stroke-width="2"><line x1="22" y1="4" x2="2" y2="4"/><path d="M2 4v16a2 2 0 002 2h16a2 2 0 002-2V4"/><line x1="8" y1="10" x2="16" y2="10"/></svg>',
+            'text': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#8b949e" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+            'generic': '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#8b949e" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>'
+        };
+
+        return svgIcons[type] || svgIcons.generic;
     }
 
-    function updateNoteCount() {
-        if (dom.noteCount) {
-            dom.noteCount.textContent = `${state.notes.length} note${state.notes.length !== 1 ? 's' : ''}`;
-        }
-    }
-
-    function updateLastSaved() {
-        // Could add a "last saved" indicator
+    function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        const size = bytes / Math.pow(1024, i);
+        return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
     }
 
     function formatDate(timestamp) {
@@ -337,11 +275,31 @@
         const days = Math.floor(diff / 86400000);
 
         if (minutes < 1) return 'Just now';
-        if (minutes < 60) return `${minutes}m ago`;
-        if (hours < 24) return `${hours}h ago`;
-        if (days < 7) return `${days}d ago`;
+        if (minutes < 60) return minutes + 'm ago';
+        if (hours < 24) return hours + 'h ago';
+        if (days < 7) return days + 'd ago';
 
         return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    // ===== File Actions =====
+    function openFile(filename) {
+        try {
+            AndroidBridge.openFile(filename);
+        } catch (e) {
+            showToast('Could not open file');
+        }
+    }
+
+    function shareFile(filename) {
+        // Build download URL from server
+        const url = state.serverUrl + '/download/' + encodeURIComponent(filename);
+        try {
+            AndroidBridge.copyToClipboard(url);
+            showToast('Download link copied to clipboard');
+        } catch (e) {
+            showToast('Could not share file');
+        }
     }
 
     // ===== Utilities =====
@@ -352,40 +310,25 @@
         return div.innerHTML;
     }
 
+    function escapeJs(text) {
+        return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    let toastTimer = null;
     function showToast(message, duration) {
         if (!dom.toast) return;
         dom.toast.textContent = message;
         dom.toast.classList.add('active');
-        clearTimeout(dom._toastTimer);
-        dom._toastTimer = setTimeout(() => {
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
             dom.toast.classList.remove('active');
         }, duration || 2500);
-    }
-
-    // ===== Tabs =====
-    function switchTab(tab) {
-        if (tab === 'edit') {
-            state.isPreview = false;
-            dom.tabEdit.classList.add('active');
-            dom.tabPreview.classList.remove('active');
-            dom.noteContent.style.display = '';
-            dom.previewPane.classList.remove('visible');
-            dom.previewPane.style.display = 'none';
-        } else {
-            state.isPreview = true;
-            dom.tabEdit.classList.remove('active');
-            dom.tabPreview.classList.add('active');
-            dom.noteContent.style.display = 'none';
-            dom.previewPane.classList.add('visible');
-            dom.previewPane.style.display = 'block';
-            updatePreview();
-        }
     }
 
     // ===== Settings =====
     function loadSettings() {
         try {
-            const saved = localStorage.getItem('notes_settings');
+            const saved = localStorage.getItem('wft_settings');
             if (saved) {
                 const parsed = JSON.parse(saved);
                 Object.assign(state.settings, parsed);
@@ -398,63 +341,22 @@
 
     function saveSettings() {
         try {
-            localStorage.setItem('notes_settings', JSON.stringify(state.settings));
+            localStorage.setItem('wft_settings', JSON.stringify(state.settings));
         } catch (e) {
             console.error('Error saving settings:', e);
         }
     }
 
     function applySettings() {
-        document.documentElement.style.setProperty('--font-size', state.settings.fontSize + 'px');
-        dom.noteContent.style.fontSize = state.settings.fontSize + 'px';
+        dom.portInput.value = state.settings.port || 8080;
+        dom.autoStartToggle.checked = state.settings.autoStart;
+        dom.keepScreenOnToggle.checked = state.settings.keepScreenOn;
 
-        if (dom.fontSizeSlider) dom.fontSizeSlider.value = state.settings.fontSize;
-        if (dom.fontSizeValue) dom.fontSizeValue.textContent = state.settings.fontSize + 'px';
-        if (dom.autoSaveToggle) dom.autoSaveToggle.checked = state.settings.autoSave;
-        if (dom.darkModeToggle) dom.darkModeToggle.checked = state.settings.darkMode;
+        try {
+            AndroidBridge.setKeepScreenOn(state.settings.keepScreenOn);
+        } catch (e) {}
 
-        // Dark mode is always on for this app, but we respect the setting
-        if (!state.settings.darkMode) {
-            document.documentElement.style.setProperty('--bg-primary', '#ffffff');
-            document.documentElement.style.setProperty('--text-primary', '#1a1a2e');
-            // Partial light mode support
-        } else {
-            document.documentElement.style.removeProperty('--bg-primary');
-            document.documentElement.style.removeProperty('--text-primary');
-        }
-    }
-
-    function updateFontSize(value) {
-        state.settings.fontSize = parseInt(value);
-        applySettings();
-        saveSettings();
-    }
-
-    function toggleAutoSave(enabled) {
-        state.settings.autoSave = enabled;
-        saveSettings();
-
-        if (enabled) {
-            startAutoSave();
-        } else {
-            stopAutoSave();
-        }
-    }
-
-    function startAutoSave() {
-        stopAutoSave();
-        state.autoSaveTimer = setInterval(() => {
-            if (state.isDirty && state.currentNote) {
-                saveCurrentNote();
-            }
-        }, state.settings.autoSaveInterval);
-    }
-
-    function stopAutoSave() {
-        if (state.autoSaveTimer) {
-            clearInterval(state.autoSaveTimer);
-            state.autoSaveTimer = null;
-        }
+        state.serverPort = state.settings.port;
     }
 
     // ===== Modals =====
@@ -464,7 +366,7 @@
 
     function openAbout() {
         if (dom.versionDisplay) {
-            dom.versionDisplay.textContent = 'Version 0.1.0';
+            dom.versionDisplay.textContent = 'Version 0.1.1';
         }
         dom.aboutModal.classList.add('active');
     }
@@ -475,41 +377,42 @@
     }
 
     function checkForUpdate() {
-        window.open('https://github.com/jnetai-clawbot/notes-app/releases/latest', '_blank');
+        try {
+            AndroidBridge.openUrl('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest');
+        } catch (e) {
+            window.open('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest', '_blank');
+        }
         closeAllModals();
     }
 
-    function shareApp() {
+    function shareAppAction() {
         try {
-            AndroidBridge.shareApp('https://github.com/jnetai-clawbot/notes-app');
-            closeAllModals();
+            AndroidBridge.shareApp();
         } catch (e) {
-            console.error('Error sharing app:', e);
-            // Fallback: copy URL
             try {
-                AndroidBridge.copyToClipboard('https://github.com/jnetai-clawbot/notes-app');
+                AndroidBridge.copyToClipboard('https://github.com/jnetai-clawbot/wifi-file-transfer');
                 showToast('Link copied to clipboard');
-            } catch (e2) {
-                showToast('Could not share');
-            }
+            } catch (e2) {}
         }
+        closeAllModals();
     }
 
-    // ===== Copy to clipboard =====
-    function copyNoteContent() {
-        if (!state.currentNote) return;
-        try {
-            AndroidBridge.copyToClipboard(state.currentNote.content);
-            showToast('Content copied to clipboard');
-        } catch (e) {
-            // Fallback
-            const textarea = document.createElement('textarea');
-            textarea.value = state.currentNote.content;
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showToast('Content copied to clipboard');
+    // ===== Polling for file updates =====
+    let refreshInterval = null;
+
+    function startPolling() {
+        stopPolling();
+        refreshInterval = setInterval(() => {
+            if (state.serverRunning) {
+                loadFiles();
+            }
+        }, 3000);
+    }
+
+    function stopPolling() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
         }
     }
 
@@ -517,84 +420,55 @@
     function init() {
         cacheDom();
         loadSettings();
-        loadNotes();
 
-        // Hide editor initially if no notes
-        if (state.notes.length === 0) {
-            clearEditor();
-        }
-
-        // Start auto-save
-        if (state.settings.autoSave) {
-            startAutoSave();
+        // Auto-start if enabled
+        if (state.settings.autoStart) {
+            setTimeout(() => startServer(), 500);
+        } else {
+            // Check initial IP
+            try {
+                state.localIp = AndroidBridge.getLocalIp();
+            } catch (e) {}
         }
 
         // ===== Event Listeners =====
+        dom.serverToggleBtn.addEventListener('click', toggleServer);
 
-        // New note
-        dom.newNoteBtn.addEventListener('click', createNewNote);
-
-        // Save
-        dom.saveBtn.addEventListener('click', saveCurrentNote);
-
-        // Delete
-        dom.deleteBtn.addEventListener('click', deleteCurrentNote);
-
-        // Title change
-        dom.noteTitle.addEventListener('input', function() {
-            state.isDirty = true;
-        });
-
-        // Content change
-        dom.noteContent.addEventListener('input', function() {
-            state.isDirty = true;
-            if (state.isPreview) {
-                updatePreview();
+        dom.copyAddressBtn.addEventListener('click', function() {
+            try {
+                AndroidBridge.copyToClipboard(state.serverUrl);
+                showToast('Address copied to clipboard');
+            } catch (e) {
+                showToast('Could not copy');
             }
         });
 
-        // Tabs
-        dom.tabEdit.addEventListener('click', function() { switchTab('edit'); });
-        dom.tabPreview.addEventListener('click', function() { switchTab('preview'); });
-
-        // Search
-        dom.searchInput.addEventListener('input', function() {
-            state.searchQuery = this.value;
-            renderNoteList();
-        });
-
-        // Menu toggle (mobile)
-        dom.menuBtn.addEventListener('click', function() {
-            dom.sidebar.classList.toggle('open');
-        });
-
-        // Settings
         dom.settingsBtn.addEventListener('click', openSettings);
-
-        // About
         dom.aboutBtn.addEventListener('click', openAbout);
 
-        // Font size
-        dom.fontSizeSlider.addEventListener('input', function() {
-            dom.fontSizeValue.textContent = this.value + 'px';
-            updateFontSize(this.value);
-        });
-
-        // Auto-save toggle
-        dom.autoSaveToggle.addEventListener('change', function() {
-            toggleAutoSave(this.checked);
-        });
-
-        // Dark mode toggle
-        dom.darkModeToggle.addEventListener('change', function() {
-            state.settings.darkMode = this.checked;
-            applySettings();
+        // Settings
+        dom.portInput.addEventListener('change', function() {
+            state.settings.port = parseInt(this.value) || 8080;
+            state.serverPort = state.settings.port;
             saveSettings();
+        });
+
+        dom.autoStartToggle.addEventListener('change', function() {
+            state.settings.autoStart = this.checked;
+            saveSettings();
+        });
+
+        dom.keepScreenOnToggle.addEventListener('change', function() {
+            state.settings.keepScreenOn = this.checked;
+            saveSettings();
+            try {
+                AndroidBridge.setKeepScreenOn(this.checked);
+            } catch (e) {}
         });
 
         // About buttons
         dom.checkUpdateBtn.addEventListener('click', checkForUpdate);
-        dom.shareAppBtn.addEventListener('click', shareApp);
+        dom.shareAppBtn.addEventListener('click', shareAppAction);
 
         // Close modals on overlay click
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -612,37 +486,14 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl+S or Cmd+S to save
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                saveCurrentNote();
-            }
-            // Escape to close modals
             if (e.key === 'Escape') {
                 closeAllModals();
             }
-            // Ctrl+N or Cmd+N for new note
-            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-                e.preventDefault();
-                createNewNote();
-            }
         });
 
-        // Save on visibility change (app switching)
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden && state.isDirty) {
-                saveCurrentNote();
-            }
-        });
+        startPolling();
 
-        // Save on before unload (covers app close)
-        window.addEventListener('beforeunload', function() {
-            if (state.isDirty) {
-                saveCurrentNote();
-            }
-        });
-
-        console.log('Local Notes initialized. Version 0.1.0');
+        console.log('WiFi File Transfer initialized. Version 0.1.1');
     }
 
     // Wait for DOM
@@ -652,18 +503,18 @@
         init();
     }
 
-    // Expose public methods
+    // ===== Expose public methods (called from Android) =====
     window.app = {
-        selectNote: selectNote,
-        createNewNote: createNewNote,
-        saveCurrentNote: saveCurrentNote,
-        deleteCurrentNote: deleteCurrentNote,
+        onServerStatus: onServerStatus,
+        onServerError: onServerError,
+        onFileReceived: onFileReceived,
+        openFile: openFile,
+        shareFile: shareFile,
         openSettings: openSettings,
         openAbout: openAbout,
         closeAllModals: closeAllModals,
         checkForUpdate: checkForUpdate,
-        shareApp: shareApp,
-        copyNoteContent: copyNoteContent,
+        shareApp: shareAppAction,
         showToast: showToast
     };
 

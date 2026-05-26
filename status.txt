@@ -1,5 +1,14 @@
 WiFiFileTransfer - Android App
 ======================
 Repo: https://github.com/jnetai-clawbot/wifi-file-transfer
-Version: v0.1.0
-Tag pushed. GitHub Actions building...
+
+STATUS: FIXED & ENHANCED
+- Fixed missing UI options for browser clients (Guest Mode implemented).
+- Added multi-file ZIP compression support (/download-zip).
+- Added QR Code scanning for easy P2P connection between apps.
+- Added Upload section with progress bars for browser/client devices.
+- Added API endpoints for device info and status.
+- Improved Dashboard UI for the host device.
+- Implemented haptic feedback and "Connect to Peer" functionality.
+
+Tag v1.0.1 pushed. GitHub Actions building...

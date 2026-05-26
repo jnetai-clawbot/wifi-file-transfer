@@ -14,6 +14,7 @@ import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import androidx.activity.result.contract.ActivityResultContracts
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
 import java.io.FileInputStream
@@ -21,6 +22,8 @@ import java.io.FileOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URLDecoder
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
@@ -29,6 +32,18 @@ class MainActivity : AppCompatActivity() {
     private var fileServer: FileServer? = null
     private var serverPort: Int = 8080
     private var isServerRunning: Boolean = false
+
+    private val scanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val scanResult = result.data?.getStringExtra("SCAN_RESULT")
+            if (scanResult != null && (scanResult.startsWith("http://") || scanResult.startsWith("https://"))) {
+                webView.loadUrl(scanResult)
+            } else if (scanResult != null) {
+                Log.d(TAG, "Scan result: $scanResult")
+                // Handle other scan results if needed
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,10 +203,52 @@ class MainActivity : AppCompatActivity() {
                 uri == "/" || uri == "/index.html" -> serveMainPage()
                 uri.startsWith("/upload") && method == Method.POST -> handleUpload(session)
                 uri.startsWith("/download/") -> handleDownload(uri)
+                uri.startsWith("/download-zip") -> handleDownloadZip()
                 uri.startsWith("/list") -> handleListFiles()
                 uri.startsWith("/delete/") -> handleDelete(uri)
                 uri.startsWith("/api/status") -> handleApiStatus()
+                uri.startsWith("/api/info") -> handleApiInfo()
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
+            }
+        }
+
+        private fun handleApiInfo(): Response {
+            val ip = getLocalIpAddress()
+            val deviceName = android.os.Build.MODEL
+            return newFixedLengthResponse(Response.Status.OK, "application/json",
+                """{"deviceName":"$deviceName","ip":"$ip","port":$serverPort}""")
+        }
+
+        private fun handleDownloadZip(): Response {
+            val dir = getReceivedDir()
+            val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
+            if (files.isEmpty()) {
+                return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "No files to zip")
+            }
+
+            val zipFile = File(cacheDir, "all_files_${System.currentTimeMillis()}.zip")
+            try {
+                ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                    for (file in files) {
+                        val entry = ZipEntry(file.name)
+                        zos.putNextEntry(entry)
+                        FileInputStream(file).use { fis ->
+                            fis.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                    }
+                }
+                
+                val response = newChunkedResponse(Response.Status.OK, "application/zip", FileInputStream(zipFile))
+                response.addHeader("Content-Disposition", "attachment; filename=\"all_files.zip\"")
+                // Delete temp file after some time or on next request
+                thread {
+                    Thread.sleep(60000) // 1 minute buffer
+                    if (zipFile.exists()) zipFile.delete()
+                }
+                return response
+            } catch (e: Exception) {
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error creating zip: ${e.message}")
             }
         }
 
@@ -388,6 +445,14 @@ class MainActivity : AppCompatActivity() {
         fun isServerRunning(): Boolean = activity.isServerRunning
 
         @JavascriptInterface
+        fun scanQrCode() {
+            activity.runOnUiThread {
+                val intent = Intent(activity, QrScannerActivity::class.java)
+                activity.scanLauncher.launch(intent)
+            }
+        }
+
+        @JavascriptInterface
         fun getReceivedFiles(): String = activity.getReceivedFiles()
 
         @JavascriptInterface
@@ -408,6 +473,19 @@ class MainActivity : AppCompatActivity() {
                 }
                 activity.startActivity(Intent.createChooser(intent, "Share WiFi File Transfer"))
             } catch (e: Exception) { Log.e(TAG, "Share error: ${e.message}") }
+        }
+
+        @JavascriptInterface
+        fun vibrate(duration: Long) {
+            try {
+                val vibrator = activity.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(duration, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(duration)
+                }
+            } catch (e: Exception) { Log.e(TAG, "Vibrate error: ${e.message}") }
         }
 
         @JavascriptInterface

@@ -42,8 +42,17 @@
         <!-- Main Content -->
         <div class="main-content">
 
-            <!-- Server Status Card -->
-            <section class="card status-card">
+            <!-- Guest Mode Info (Hidden by default) -->
+            <section class="card status-card" id="guestInfoCard" style="display:none;">
+                <div class="status-indicator">
+                    <div class="status-dot online"></div>
+                    <span>Connected to <span id="targetDeviceName">Device</span></span>
+                </div>
+                <p class="card-desc" style="margin-top:8px;">You can upload files to this device or download files from it.</p>
+            </section>
+
+            <!-- Server Status Card (Dashboard only) -->
+            <section class="card status-card" id="serverStatusCard">
                 <div class="status-indicator" id="statusIndicator">
                     <div class="status-dot" id="statusDot"></div>
                     <span id="statusText">Offline</span>
@@ -72,6 +81,36 @@
                     </span>
                     <span id="serverBtnText">Start Server</span>
                 </button>
+                <button class="btn btn-secondary" id="connectPeerBtn" style="width:100%; margin-top:8px;">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                    Connect to Peer
+                </button>
+            </section>
+
+            <!-- Upload Files Card -->
+            <section class="card" id="uploadCard" style="display:none;">
+                <h2 class="card-title">Upload Files</h2>
+                <p class="card-desc">Select files to send to the Android device.</p>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" multiple style="display:none;">
+                    <button class="btn btn-primary" id="selectFilesBtn" style="width:100%;">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Select & Upload Files
+                    </button>
+                    <div id="uploadProgressContainer" style="display:none; margin-top:16px;">
+                        <div class="progress-info">
+                            <span id="uploadStatusText">Uploading...</span>
+                            <span id="uploadPercentText">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="uploadProgressFill"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Quick Connect Card -->
@@ -96,7 +135,15 @@
             <section class="card" id="filesCard">
                 <div class="card-header">
                     <h2 class="card-title">Received Files</h2>
-                    <span class="file-count" id="fileCount">0 files</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="btn btn-secondary btn-small" id="downloadAllBtn" title="Download all as ZIP" style="display:none; padding: 4px 8px; width: auto; height: auto;">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            ZIP
+                        </button>
+                        <span class="file-count" id="fileCount">0 files</span>
+                    </div>
                 </div>
                 <div class="file-list" id="fileList">
                     <div class="empty-files">

@@ -7,6 +7,7 @@
 
     // ===== State =====
     const state = {
+        isApp: typeof AndroidBridge !== 'undefined',
         serverRunning: false,
         serverUrl: '',
         serverPort: 8080,
@@ -25,28 +26,44 @@
 
     const dom = {};
     function cacheDom() {
+        // App Only
+        dom.serverStatusCard = $('#serverStatusCard');
         dom.statusDot = $('#statusDot');
         dom.statusText = $('#statusText');
         dom.serverInfo = $('#serverInfo');
         dom.serverAddress = $('#serverAddress');
         dom.serverPort = $('#serverPort');
         dom.serverToggleBtn = $('#serverToggleBtn');
+        dom.connectPeerBtn = $('#connectPeerBtn');
         dom.serverBtnIcon = $('#serverBtnIcon');
         dom.serverBtnText = $('#serverBtnText');
         dom.quickConnectCard = $('#quickConnectCard');
-        dom.qrcodeContainer = $('#qrcodeContainer');
         dom.qrcode = $('#qrcode');
-        dom.fileList = $('#fileList');
-        dom.fileCount = $('#fileCount');
-        dom.copyAddressBtn = $('#copyAddressBtn');
-        dom.settingsBtn = $('#settingsBtn');
-        dom.aboutBtn = $('#aboutBtn');
-        dom.settingsModal = $('#settingsModal');
-        dom.aboutModal = $('#aboutModal');
-        dom.toast = $('#toast');
         dom.portInput = $('#portInput');
         dom.autoStartToggle = $('#autoStartToggle');
         dom.keepScreenOnToggle = $('#keepScreenOnToggle');
+        dom.copyAddressBtn = $('#copyAddressBtn');
+        dom.settingsBtn = $('#settingsBtn');
+        dom.aboutBtn = $('#aboutBtn');
+
+        // Guest Only
+        dom.guestInfoCard = $('#guestInfoCard');
+        dom.targetDeviceName = $('#targetDeviceName');
+        dom.uploadCard = $('#uploadCard');
+        dom.fileInput = $('#fileInput');
+        dom.selectFilesBtn = $('#selectFilesBtn');
+        dom.uploadProgressContainer = $('#uploadProgressContainer');
+        dom.uploadStatusText = $('#uploadStatusText');
+        dom.uploadPercentText = $('#uploadPercentText');
+        dom.uploadProgressFill = $('#uploadProgressFill');
+
+        // Shared
+        dom.fileList = $('#fileList');
+        dom.fileCount = $('#fileCount');
+        dom.downloadAllBtn = $('#downloadAllBtn');
+        dom.settingsModal = $('#settingsModal');
+        dom.aboutModal = $('#aboutModal');
+        dom.toast = $('#toast');
         dom.versionDisplay = $('#versionDisplay');
         dom.checkUpdateBtn = $('#checkUpdateBtn');
         dom.shareAppBtn = $('#shareAppBtn');
@@ -109,6 +126,8 @@
     }
 
     function updateServerUI() {
+        if (!state.isApp) return;
+
         if (state.serverRunning) {
             dom.statusDot.className = 'status-dot online';
             dom.statusText.textContent = 'Online';
@@ -140,6 +159,7 @@
 
     // ===== QR Code =====
     function generateQRCode(url) {
+        if (!dom.qrcode) return;
         dom.qrcode.innerHTML = '';
         try {
             new QRCode(dom.qrcode, {
@@ -161,10 +181,17 @@
     }
 
     // ===== File Management =====
-    function loadFiles() {
+    async function loadFiles() {
         try {
-            const filesJson = AndroidBridge.getReceivedFiles();
-            state.files = JSON.parse(filesJson) || [];
+            if (state.isApp) {
+                const filesJson = AndroidBridge.getReceivedFiles();
+                state.files = JSON.parse(filesJson) || [];
+            } else {
+                const resp = await fetch('/list');
+                if (resp.ok) {
+                    state.files = await resp.json() || [];
+                }
+            }
             renderFileList();
         } catch (e) {
             console.error('Error loading files:', e);
@@ -184,13 +211,15 @@
                         <line x1="9" y1="15" x2="15" y2="15"/>
                     </svg>
                     <p>No files received yet</p>
-                    <p class="empty-hint">Start the server and upload files from your computer</p>
+                    <p class="empty-hint">${state.isApp ? 'Start the server and upload files from your computer' : 'Upload files using the button above'}</p>
                 </div>`;
             dom.fileCount.textContent = '0 files';
+            if (dom.downloadAllBtn) dom.downloadAllBtn.style.display = 'none';
             return;
         }
 
         dom.fileCount.textContent = state.files.length + ' file' + (state.files.length !== 1 ? 's' : '');
+        if (dom.downloadAllBtn) dom.downloadAllBtn.style.display = 'flex';
 
         dom.fileList.innerHTML = state.files.map((file, index) => {
             const icon = getFileIcon(file.name);
@@ -209,6 +238,7 @@
                         </div>
                     </div>
                     <div class="file-actions">
+                        ${state.isApp ? `
                         <button class="btn-icon btn-small" onclick="window.app.openFile('${escapeJs(file.name)}')" title="Open file">
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -224,7 +254,13 @@
                                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
                                 <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                             </svg>
-                        </button>
+                        </button>` : `
+                        <a class="btn-icon btn-small" href="/download/${encodeURIComponent(file.name)}" download="${escapeHtml(file.name)}" title="Download file">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        </a>
+                        `}
                     </div>
                 </div>
             `;
@@ -283,7 +319,62 @@
     }
 
     // ===== File Actions =====
+    async function handleUpload(e) {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        dom.uploadProgressContainer.style.display = 'block';
+        dom.selectFilesBtn.disabled = true;
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            dom.uploadStatusText.textContent = `Uploading: ${file.name} (${i + 1}/${files.length})`;
+            
+            try {
+                await uploadFile(file);
+            } catch (err) {
+                showToast('Upload failed: ' + file.name);
+            }
+        }
+
+        dom.uploadProgressContainer.style.display = 'none';
+        dom.selectFilesBtn.disabled = false;
+        dom.fileInput.value = '';
+        showToast('All uploads complete');
+        loadFiles();
+    }
+
+    function uploadFile(file) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const formData = new FormData();
+            formData.append('file', file);
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    dom.uploadPercentText.textContent = percent + '%';
+                    dom.uploadProgressFill.style.width = percent + '%';
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                } else {
+                    reject(new Error('Upload failed'));
+                }
+            });
+
+            xhr.addEventListener('error', () => reject(new Error('Network error')));
+            
+            xhr.open('POST', '/upload');
+            xhr.send(formData);
+        });
+    }
+
     function openFile(filename) {
+        if (!state.isApp) return;
         try {
             AndroidBridge.openFile(filename);
         } catch (e) {
@@ -292,6 +383,7 @@
     }
 
     function shareFile(filename) {
+        if (!state.isApp) return;
         // Build download URL from server
         const url = state.serverUrl + '/download/' + encodeURIComponent(filename);
         try {
@@ -327,6 +419,7 @@
 
     // ===== Settings =====
     function loadSettings() {
+        if (!state.isApp) return;
         try {
             const saved = localStorage.getItem('wft_settings');
             if (saved) {
@@ -340,6 +433,7 @@
     }
 
     function saveSettings() {
+        if (!state.isApp) return;
         try {
             localStorage.setItem('wft_settings', JSON.stringify(state.settings));
         } catch (e) {
@@ -348,6 +442,7 @@
     }
 
     function applySettings() {
+        if (!state.isApp) return;
         dom.portInput.value = state.settings.port || 8080;
         dom.autoStartToggle.checked = state.settings.autoStart;
         dom.keepScreenOnToggle.checked = state.settings.keepScreenOn;
@@ -377,22 +472,38 @@
     }
 
     function checkForUpdate() {
-        try {
-            AndroidBridge.openUrl('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest');
-        } catch (e) {
+        if (state.isApp) {
+            try {
+                AndroidBridge.openUrl('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest');
+            } catch (e) {
+                window.open('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest', '_blank');
+            }
+        } else {
             window.open('https://github.com/jnetai-clawbot/wifi-file-transfer/releases/latest', '_blank');
         }
         closeAllModals();
     }
 
     function shareAppAction() {
-        try {
-            AndroidBridge.shareApp();
-        } catch (e) {
+        if (state.isApp) {
             try {
-                AndroidBridge.copyToClipboard('https://github.com/jnetai-clawbot/wifi-file-transfer');
-                showToast('Link copied to clipboard');
-            } catch (e2) {}
+                AndroidBridge.shareApp();
+            } catch (e) {
+                try {
+                    AndroidBridge.copyToClipboard('https://github.com/jnetai-clawbot/wifi-file-transfer');
+                    showToast('Link copied to clipboard');
+                } catch (e2) {}
+            }
+        } else {
+            // Browser share if available
+            if (navigator.share) {
+                navigator.share({
+                    title: 'WiFi File Transfer',
+                    url: 'https://github.com/jnetai-clawbot/wifi-file-transfer'
+                });
+            } else {
+                showToast('Copy the URL to share');
+            }
         }
         closeAllModals();
     }
@@ -419,21 +530,42 @@
     // ===== Initialize =====
     function init() {
         cacheDom();
+
+        if (state.isApp) {
+            initApp();
+        } else {
+            initGuest();
+        }
+
+        setupCommonListeners();
+        startPolling();
+
+        console.log('WiFi File Transfer initialized. Mode: ' + (state.isApp ? 'App' : 'Guest'));
+    }
+
+    function initApp() {
+        dom.serverStatusCard.style.display = 'block';
+        dom.settingsBtn.style.display = 'flex';
+        
         loadSettings();
 
         // Auto-start if enabled
         if (state.settings.autoStart) {
             setTimeout(() => startServer(), 500);
         } else {
-            // Check initial IP
             try {
                 state.localIp = AndroidBridge.getLocalIp();
             } catch (e) {}
         }
 
-        // ===== Event Listeners =====
         dom.serverToggleBtn.addEventListener('click', toggleServer);
-
+        dom.connectPeerBtn.addEventListener('click', function() {
+            try {
+                AndroidBridge.scanQrCode();
+            } catch (e) {
+                showToast('Scanner not available');
+            }
+        });
         dom.copyAddressBtn.addEventListener('click', function() {
             try {
                 AndroidBridge.copyToClipboard(state.serverUrl);
@@ -442,7 +574,33 @@
                 showToast('Could not copy');
             }
         });
+    }
 
+    async function initGuest() {
+        dom.guestInfoCard.style.display = 'block';
+        dom.uploadCard.style.display = 'block';
+        dom.settingsBtn.style.display = 'none';
+        
+        state.serverRunning = true; // Guest assumes server is up if page loaded
+        
+        try {
+            const resp = await fetch('/api/info');
+            if (resp.ok) {
+                const info = await resp.json();
+                dom.targetDeviceName.textContent = info.deviceName || 'Android Device';
+            }
+        } catch (e) {
+            console.error('Failed to fetch api info');
+        }
+
+        dom.selectFilesBtn.addEventListener('click', () => dom.fileInput.click());
+        dom.fileInput.addEventListener('change', handleUpload);
+        dom.downloadAllBtn.addEventListener('click', () => {
+            window.location.href = '/download-zip';
+        });
+    }
+
+    function setupCommonListeners() {
         dom.settingsBtn.addEventListener('click', openSettings);
         dom.aboutBtn.addEventListener('click', openAbout);
 
@@ -461,9 +619,11 @@
         dom.keepScreenOnToggle.addEventListener('change', function() {
             state.settings.keepScreenOn = this.checked;
             saveSettings();
-            try {
-                AndroidBridge.setKeepScreenOn(this.checked);
-            } catch (e) {}
+            if (state.isApp) {
+                try {
+                    AndroidBridge.setKeepScreenOn(this.checked);
+                } catch (e) {}
+            }
         });
 
         // About buttons
@@ -490,10 +650,6 @@
                 closeAllModals();
             }
         });
-
-        startPolling();
-
-        console.log('WiFi File Transfer initialized. Version 0.1.1');
     }
 
     // Wait for DOM

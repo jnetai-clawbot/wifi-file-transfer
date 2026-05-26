@@ -12,7 +12,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
-import androidx.webkit.WebViewAssetLoader
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
 import java.io.FileInputStream
@@ -25,7 +26,6 @@ import kotlin.concurrent.thread
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private lateinit var assetLoader: WebViewAssetLoader
     private var fileServer: FileServer? = null
     private var serverPort: Int = 8080
     private var isServerRunning: Boolean = false
@@ -44,11 +44,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView() {
-        assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
-            .addPathHandler("/res/", WebViewAssetLoader.ResourcesPathHandler(this))
-            .build()
-
         webView.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -59,14 +54,44 @@ class MainActivity : AppCompatActivity() {
             settings.displayZoomControls = false
             settings.setSupportZoom(true)
             settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val uri = request?.url ?: return null
+                    val path = uri.path ?: return null
+                    val assetPath = path.removePrefix("/assets/")
+                    return try {
+                        val inputStream = assets.open(assetPath)
+                        val mime = when {
+                            assetPath.endsWith(".html") -> "text/html"
+                            assetPath.endsWith(".css") -> "text/css"
+                            assetPath.endsWith(".js") -> "application/javascript"
+                            assetPath.endsWith(".png") -> "image/png"
+                            assetPath.endsWith(".jpg") || assetPath.endsWith(".jpeg") -> "image/jpeg"
+                            assetPath.endsWith(".svg") -> "image/svg+xml"
+                            assetPath.endsWith(".json") -> "application/json"
+                            assetPath.endsWith(".woff2") -> "font/woff2"
+                            assetPath.endsWith(".woff") -> "font/woff"
+                            assetPath.endsWith(".ttf") -> "font/ttf"
+                            else -> "text/plain"
+                        }
+                        WebResourceResponse(mime, "UTF-8", inputStream)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                 }
             }
+
             addJavascriptInterface(AndroidBridge(this@MainActivity), "AndroidBridge")
-            loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
+
+            // Load the HTML directly from assets with a local base URL
+            val html = assets.open("web/index.html").bufferedReader().use { it.readText() }
+            loadDataWithBaseURL("file:///android_asset/web/", html, "text/html", "UTF-8", null)
         }
     }
 

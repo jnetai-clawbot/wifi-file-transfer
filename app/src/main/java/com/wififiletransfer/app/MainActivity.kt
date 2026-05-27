@@ -208,8 +208,12 @@ class MainActivity : AppCompatActivity() {
 
         override fun serve(session: IHTTPSession): Response {
             if (authEnabled) {
-                val auth = session.cookies.find { it.httpCookie.name == "wft_auth" }
-                    ?: session.parameters["auth"]?.firstOrNull()
+                val cookieHeader = session.headers["cookie"] ?: ""
+                val authFromCookie = cookieHeader.split(";")
+                    .map { it.trim() }
+                    .find { it.startsWith("wft_auth=") }
+                    ?.removePrefix("wft_auth=")
+                val auth = authFromCookie ?: session.parameters["auth"]?.firstOrNull()
                 if (auth != authPassword && authPassword.isNotEmpty()) {
                     return serveLoginPage()
                 }

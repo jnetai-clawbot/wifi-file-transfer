@@ -2,13 +2,33 @@ WiFiFileTransfer - Android App
 ======================
 Repo: https://github.com/jnetai-clawbot/wifi-file-transfer
 
-STATUS: FIXED & ENHANCED
-- Fixed missing UI options for browser clients (Guest Mode implemented).
-- Added multi-file ZIP compression support (/download-zip).
-- Added QR Code scanning for easy P2P connection between apps.
-- Added Upload section with progress bars for browser/client devices.
-- Added API endpoints for device info and status.
-- Improved Dashboard UI for the host device.
-- Implemented haptic feedback and "Connect to Peer" functionality.
 
 Tag v1.0.1 pushed. GitHub Actions building...
+
+Add a qr code when in server mode aswell as show server ip and port so a client can connect to the running server, (this is for local network wifi and local lan only!
+
+add a password (basic auth allow enable pin / password / passphrase to server so if a client loads up the server side page its serving it should grab ip addressess (ip4 and ip6 support options for connectivity)
+
+(disable authentication by default off (unless a pin / password / secret auth phrase) is enabled then use that to allow access.
+
+when I manually connect as a client to the running server it shows web page of a basic version  of all the server side stuff! it shoul be like more like wifi file transfer pro where it shows all the files that are on the device with checkboxes and select all checkbox on the top left of the file table, then location and filename and download button on the right then delete button and move button alsol showing ../ button to navigate to previous parent folder / location, and an upload button and allow selection of 1 or more files (it should default to upload to current directory/ folder thats visilbe) (pwd on screen) and allow removale / move / copy / download of selected files (1 or more selected by select checkbox) 
+
+
+     → Read ~/Documents/Scripts/AI/Gemini/wifi-file-transfer/status.txt                           
+                                                                                                  
+     + Thought: 4.6s                                                                              
+                                                                                                  
+     The status.txt shows additional features needed for WiFi File Transfer v1.0.1+:              
+                                                                                                  
+     1. QR code on server screen showing IP:port for LAN clients                                  
+     2. Basic auth (PIN/password/phrase) — disabled by default, enablable in settings             
+     3. IPv4 and IPv6 connectivity options                                                        
+     4. Full file browser web UI (like WiFi File Transfer Pro): file table with checkboxes,       
+        select all, directory navigation (../), download/delete/move buttons, upload to current   
+        directory, and current path display                                                       
+                                                                                                  
+     Ready when you want me to implement these.                                                   
+                                                                                                  
+     ▣  Build · deepseek-v4-pro · 34.5s          
+     
+     

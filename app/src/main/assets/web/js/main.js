@@ -100,15 +100,25 @@
     }
 
     // Called from Android via evaluateJavascript
-    function onServerStatus(status, url, port) {
+    function onServerStatus(status, url, port, ip4, ip6, authEnabled) {
         state.serverRunning = (status === 'running');
         state.serverUrl = url;
         state.serverPort = port;
 
         updateServerUI();
+        updateIPv6(ip6, port);
 
         if (state.serverRunning) {
             loadFiles();
+        }
+    }
+
+    function updateIPv6(ip6, port) {
+        var ip6Row = document.getElementById('ipv6Row');
+        if (ipv6Row && ip6) {
+            ip6Row.style.display = 'flex';
+            var ip6El = document.getElementById('serverAddress6');
+            if (ip6El) ip6El.textContent = 'http://' + ip6 + ':' + port;
         }
     }
 

@@ -68,6 +68,16 @@
                             </svg>
                         </button>
                     </div>
+                    <div class="info-row" id="ipv6Row" style="display:none;">
+                        <span class="info-label">IPv6</span>
+                        <span class="info-value" id="serverAddress6">[::1]:8080</span>
+                        <button class="btn-icon btn-small" id="copyAddress6Btn" title="Copy IPv6 address">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="info-row">
                         <span class="info-label">Port</span>
                         <span class="info-value" id="serverPort">8080</span>
@@ -163,7 +173,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <span>WiFi File Transfer v0.1.1</span>
+            <span>WiFi File Transfer v1.0.2</span>
             <span>Made by <a href="https://jnetai.com" target="_blank" onclick="event.preventDefault();window.app.openUrl('https://jnetai.com')">jnetai.com</a></span>
         </footer>
     </div>
@@ -209,6 +219,24 @@
                     </label>
                 </div>
 
+                <div class="setting-toggle">
+                    <div>
+                        <div class="toggle-label">Enable Password (Basic Auth)</div>
+                        <div class="toggle-desc">Require password to access files from browser</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="authToggle">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="setting-group" id="authPasswordGroup" style="display:none;">
+                    <label for="authPasswordInput">Server Password</label>
+                    <input type="text" id="authPasswordInput" placeholder="Enter password">
+                </div>
+
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary modal-close-btn">Close</button>
@@ -228,7 +256,7 @@
                     </svg>
                 </div>
                 <h3>WiFi File Transfer</h3>
-                <div class="version" id="versionDisplay">Version 0.1.1</div>
+                <div class="version" id="versionDisplay">Version 1.0.2</div>
                 <div class="made-by">
                     Made by <a href="https://jnetai.com" target="_blank" onclick="event.preventDefault();window.app.openUrl('https://jnetai.com')">jnetai.com</a>
                 </div>

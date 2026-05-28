@@ -366,14 +366,7 @@ body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--text)
 .modal-btns{display:flex;gap:8px;justify-content:flex-end}
 .check-all{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer}
 .check-all input{width:16px;height:16px;accent-color:var(--blue)}
-.info-bar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap}
-.info-bar .info-label{font-size:11px;color:var(--muted);white-space:nowrap}
-.info-bar .info-value{font-size:12px;color:var(--blue);font-family:monospace;word-break:break-all;flex:1;min-width:100px}
-.info-bar .copy-btn{width:24px;height:24px;background:rgba(88,166,255,.1);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:.2s}
-.info-bar .copy-btn:hover{color:var(--blue);border-color:var(--blue)}
-.qr-small{margin-left:4px}
-.qr-small img{width:80px;height:80px;border:1px solid var(--border);border-radius:4px}
-@media(max-width:600px){.topbar h1{font-size:14px}.toolbar{padding:6px 8px}.file-row{padding:6px 8px}.info-bar{gap:6px}}
+@media(max-width:600px){.topbar h1{font-size:14px}.toolbar{padding:6px 8px}.file-row{padding:6px 8px}}
 </style>
 </head>
 <body>
@@ -381,15 +374,6 @@ body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--text)
 <h1>WiFi File Transfer</h1>
 <span class="sep"></span>
 <button class="btn btn-blue btn-sm" onclick="reload()">Refresh</button>
-</div>
-<div class="info-bar" id="infoBar">
-<span class="info-label">IPv4:</span>
-<span class="info-value" id="infoIPv4">--</span>
-<button class="copy-btn" id="copyIPv4" onclick="copyText(document.getElementById('infoIPv4').textContent)" title="Copy IPv4">&#x2398;</button>
-<span class="info-label">IPv6:</span>
-<span class="info-value" id="infoIPv6">--</span>
-<button class="copy-btn" id="copyIPv6" onclick="copyText(document.getElementById('infoIPv6').textContent)" title="Copy IPv6">&#x2398;</button>
-<div class="qr-small"><img id="qrImg" src="" alt="QR" style="display:none" onerror="this.style.display='none'"></div>
 </div>
 <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
 <input type="file" id="fileInput" multiple onchange="handleUploadFiles(event)">
@@ -539,12 +523,6 @@ var ua=document.getElementById('uploadArea');
 ua.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();ua.classList.add('dragover')});
 ua.addEventListener('dragleave',function(e){e.preventDefault();e.stopPropagation();ua.classList.remove('dragover')});
 ua.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();ua.classList.remove('dragover');var files=e.dataTransfer.files;if(files.length)uploadFiles(files)});
-function copyText(t){if(!t||t==='--')return;var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);showToast('Copied: '+t)}
-fetch('/api/info').then(function(r){return r.json()}).then(function(info){
-document.getElementById('infoIPv4').textContent=info.ipv4url||info.ipv4||'--';
-document.getElementById('infoIPv6').textContent=info.ipv6url||info.ipv6||'--';
-var qr=document.getElementById('qrImg');qr.src='/qrcode';qr.style.display='inline-block';qr.title='Scan QR to connect';
-}).catch(function(){});
 loadFiles(currentDir);
 </script>
 </body>

@@ -11,8 +11,8 @@ android {
         applicationId = "com.wififiletransfer.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.0.4"
+        versionCode = 7
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -77,4 +77,7 @@ dependencies {
 
     // ML Kit Barcode Scanning
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
+
+    // ZXing Core - server-side QR code generation
+    implementation("com.google.zxing:core:3.5.3")
 }

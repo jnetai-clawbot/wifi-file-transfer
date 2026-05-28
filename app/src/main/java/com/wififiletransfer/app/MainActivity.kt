@@ -58,6 +58,16 @@ class MainActivity : AppCompatActivity() {
         authEnabled = prefs.getBoolean("auth_enabled", false)
         authPassword = prefs.getString("auth_password", "") ?: ""
         serverPort = prefs.getInt("server_port", 8080)
+
+        val savedDir = prefs.getString("base_dir", null)
+        if (savedDir != null) {
+            val dir = File(savedDir)
+            if (dir.exists() && dir.isDirectory) serverBaseDir = dir
+        } else {
+            val appDir = getExternalFilesDir(null)
+            if (appDir != null && appDir.exists()) serverBaseDir = appDir
+        }
+
         webView = WebView(this)
         setContentView(webView)
         setupWebView()
@@ -206,8 +216,6 @@ class MainActivity : AppCompatActivity() {
     // ===== HTTP File Server =====
     inner class FileServer(port: Int) : NanoHTTPD(port) {
 
-        private val BOUNDARY_PREFIX = "wft_boundary_"
-
         override fun serve(session: IHTTPSession): Response {
             if (authEnabled) {
                 val cookieHeader = session.headers["cookie"] ?: ""
@@ -223,7 +231,6 @@ class MainActivity : AppCompatActivity() {
 
             val uri = session.uri
             val method = session.method
-            val dir = session.parameters["dir"]?.firstOrNull() ?: serverBaseDir.absolutePath
 
             return when {
                 uri == "/login" && method == Method.POST -> handleLogin(session)
@@ -231,11 +238,12 @@ class MainActivity : AppCompatActivity() {
                 uri.startsWith("/api/list") -> handleListDir(session)
                 uri == "/list" -> handleListDir(session)
                 uri.startsWith("/api/status") -> handleApiStatus()
-                uri == "/upload" && method == Method.POST -> handleUpload(session, dir)
+                uri == "/upload" && method == Method.POST -> handleUpload(session)
                 uri.startsWith("/download") -> handleDownload(session)
                 uri == "/delete" && method == Method.POST -> handleDelete(session)
                 uri == "/move" && method == Method.POST -> handleMove(session)
                 uri == "/download-zip" && method == Method.POST -> handleDownloadZip(session)
+                uri == "/mkdir" && method == Method.POST -> handleMkdir(session)
                 uri == "/" || uri == "/index.html" -> serveFileBrowser()
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
             }
@@ -371,6 +379,8 @@ Click to upload files to current directory
 <button class="btn btn-blue btn-sm" id="downloadBtn" onclick="downloadSelected()" style="display:none">Download ZIP</button>
 <button class="btn btn-danger btn-sm" id="deleteBtn" onclick="deleteSelected()" style="display:none">Delete</button>
 <button class="btn btn-warn btn-sm" id="moveBtn" onclick="showMoveModal()" style="display:none">Move</button>
+<div style="flex:1"></div>
+<button class="btn btn-green btn-sm" id="newFolderBtn" onclick="showNewFolderModal()">New Folder</button>
 </div>
 <div class="path-bar" id="pathBar"></div>
 <div class="files" id="fileList">
@@ -383,6 +393,16 @@ Click to upload files to current directory
 <div class="modal-btns">
 <button class="btn btn-blue btn-sm" onclick="closeMoveModal()">Cancel</button>
 <button class="btn btn-green btn-sm" onclick="executeMove()">Move</button>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="newFolderModal">
+<div class="modal">
+<h3>Create New Folder</h3>
+<input type="text" id="newFolderName" placeholder="Folder name">
+<div class="modal-btns">
+<button class="btn btn-blue btn-sm" onclick="closeNewFolderModal()">Cancel</button>
+<button class="btn btn-green btn-sm" onclick="createNewFolder()">Create</button>
 </div>
 </div>
 </div>
@@ -480,6 +500,16 @@ closeMoveModal();
 fetch('/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:Array.from(selected),dest:dest})})
 .then(function(){showToast('Moved');selected.clear();reload()});
 }
+function showNewFolderModal(){document.getElementById('newFolderModal').classList.add('show');document.getElementById('newFolderName').value='';document.getElementById('newFolderName').focus()}
+function closeNewFolderModal(){document.getElementById('newFolderModal').classList.remove('show')}
+function createNewFolder(){
+var name=document.getElementById('newFolderName').value.trim();
+if(!name){showToast('Enter a folder name');return}
+closeNewFolderModal();
+fetch('/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,parent:currentDir})})
+.then(function(){showToast('Folder created');reload()})
+.catch(function(){showToast('Failed to create folder')});
+}
 function formatSize(b){if(!b||b===0)return'';var u=['B','KB','MB','GB'];var i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i]}
 var tt;
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){t.classList.remove('show')},2500)}
@@ -538,32 +568,29 @@ loadFiles(currentDir);
                 """{"status":"running","ip":"$ipv4","port":$serverPort,"clients":0}""")
         }
 
-        private fun handleUpload(session: IHTTPSession, dirPath: String): Response {
+        private fun handleUpload(session: IHTTPSession): Response {
             try {
-                val targetDir = File(dirPath)
+                val files = HashMap<String, String>()
+                session.parseBody(files)
+                val dirParam = session.parameters["dir"]?.firstOrNull() ?: serverBaseDir.absolutePath
+                val targetDir = File(dirParam)
                 if (!targetDir.exists()) targetDir.mkdirs()
-                val tempFile = File(cacheDir, "upload_temp_${System.currentTimeMillis()}")
-                streamToFile(session.inputStream, tempFile)
-                val contentType = session.headers["content-type"]
-                val boundary = contentType?.substringAfter("boundary=")?.trim()
-                if (boundary != null) {
-                    val parts = parseMultipart(tempFile, boundary)
-                    for (part in parts) {
-                        if (part.filename.isNotBlank()) {
-                            val dest = File(targetDir, part.filename)
-                            dest.writeBytes(part.data)
-                            Log.d(TAG, "Uploaded: ${part.filename} to $dirPath")
-                        }
-                    }
-                } else {
-                    val filename = session.parameters["name"]?.firstOrNull() ?: "file_${System.currentTimeMillis()}"
+                var savedCount = 0
+                for ((_, tmpPath) in files) {
+                    val tmpFile = File(tmpPath)
+                    if (!tmpFile.exists()) continue
+                    val formField = tmpPath.substringAfterLast("/")
+                    val originalName = session.parameters[formField]?.firstOrNull()
+                    val filename = if (originalName.isNullOrBlank()) "file_${System.currentTimeMillis()}" else originalName
                     val dest = File(targetDir, filename)
-                    tempFile.copyTo(dest, overwrite = true)
+                    tmpFile.copyTo(dest, overwrite = true)
+                    Log.d(TAG, "Uploaded: $filename to $dirParam")
+                    savedCount++
+                    tmpFile.delete()
                 }
-                tempFile.delete()
-                return newFixedLengthResponse(Response.Status.OK, "text/plain", "OK")
+                return newFixedLengthResponse(Response.Status.OK, "text/plain", "OK ($savedCount files)")
             } catch (e: Exception) {
-                Log.e(TAG, "Upload failed: ${e.message}")
+                Log.e(TAG, "Upload failed: ${e.message}", e)
                 return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error: ${e.message}")
             }
         }
@@ -643,6 +670,27 @@ loadFiles(currentDir);
             }
         }
 
+        private fun handleMkdir(session: IHTTPSession): Response {
+            try {
+                val body = session.inputStream.bufferedReader().readText()
+                val json = org.json.JSONObject(body)
+                val folderName = json.getString("name")
+                val parentDir = json.optString("parent", serverBaseDir.absolutePath)
+                val newDir = File(parentDir, folderName)
+                if (!newDir.absolutePath.startsWith(serverBaseDir.absolutePath)) {
+                    return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "Access denied")
+                }
+                val created = newDir.mkdirs()
+                return if (created) {
+                    newFixedLengthResponse(Response.Status.OK, "text/plain", "Folder created")
+                } else {
+                    newFixedLengthResponse(Response.Status.CONFLICT, "text/plain", "Folder already exists or could not be created")
+                }
+            } catch (e: Exception) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Error: ${e.message}")
+            }
+        }
+
         private fun handleDownloadZip(session: IHTTPSession): Response {
             try {
                 val body = session.inputStream.bufferedReader().readText()
@@ -690,64 +738,6 @@ loadFiles(currentDir);
                 }
             }
         }
-
-        private fun streamToFile(inputStream: java.io.InputStream, dest: File): Long {
-            val fos = FileOutputStream(dest)
-            val buf = ByteArray(8192)
-            var total: Long = 0
-            var read: Int
-            while (inputStream.read(buf).also { read = it } != -1) {
-                fos.write(buf, 0, read)
-                total += read
-            }
-            fos.close()
-            return total
-        }
-    }
-
-    // ===== Multipart parsing =====
-    data class MultipartEntry(val filename: String, val data: ByteArray)
-
-    private fun findSubarray(array: ByteArray, subarray: ByteArray, start: Int): Int {
-        if (subarray.isEmpty()) return start
-        val end = array.size - subarray.size
-        for (i in start..end) {
-            var match = true
-            for (j in subarray.indices) {
-                if (array[i + j] != subarray[j]) { match = false; break }
-            }
-            if (match) return i
-        }
-        return -1
-    }
-
-    private fun parseMultipart(file: File, boundary: String): List<MultipartEntry> {
-        val parts = mutableListOf<MultipartEntry>()
-        val bytes = file.readBytes()
-        val boundaryBytes = "--$boundary".toByteArray()
-        var pos = 0
-        while (true) {
-            val start = findSubarray(bytes, boundaryBytes, pos)
-            if (start == -1) break
-            val nextStart = findSubarray(bytes, boundaryBytes, start + boundaryBytes.size)
-            if (nextStart == -1) break
-            val section = bytes.copyOfRange(start + boundaryBytes.size, nextStart)
-            if (section.isNotEmpty() && section[0] == '-'.code.toByte()) break
-            val sectionStr = String(section, Charsets.UTF_8)
-            val headerEnd = sectionStr.indexOf("\r\n\r\n")
-            if (headerEnd == -1) { pos = nextStart; continue }
-            val headers = sectionStr.substring(0, headerEnd)
-            val dataStart = headerEnd + 4
-            val dataEnd = if (section.size >= 2) section.size - 2 else section.size
-            val data = section.copyOfRange(dataStart, dataEnd)
-            val filenameMatch = Regex("""filename="([^"]*)"""").find(headers)
-            val filename = filenameMatch?.groupValues?.get(1) ?: ""
-            if (filename.isNotBlank()) {
-                parts.add(MultipartEntry(filename, data))
-            }
-            pos = nextStart
-        }
-        return parts
     }
 
     // ===== JavaScript Bridge =====

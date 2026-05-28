@@ -34,7 +34,6 @@
         dom.serverAddress = $('#serverAddress');
         dom.serverPort = $('#serverPort');
         dom.serverToggleBtn = $('#serverToggleBtn');
-        dom.connectPeerBtn = $('#connectPeerBtn');
         dom.serverBtnIcon = $('#serverBtnIcon');
         dom.serverBtnText = $('#serverBtnText');
         dom.quickConnectCard = $('#quickConnectCard');
@@ -569,13 +568,6 @@
         }
 
         dom.serverToggleBtn.addEventListener('click', toggleServer);
-        dom.connectPeerBtn.addEventListener('click', function() {
-            try {
-                AndroidBridge.scanQrCode();
-            } catch (e) {
-                showToast('Scanner not available');
-            }
-        });
         dom.copyAddressBtn.addEventListener('click', function() {
             try {
                 AndroidBridge.copyToClipboard(state.serverUrl);

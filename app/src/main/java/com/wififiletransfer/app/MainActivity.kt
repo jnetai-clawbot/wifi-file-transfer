@@ -28,6 +28,8 @@ import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -233,6 +235,7 @@ class MainActivity : AppCompatActivity() {
                 uri.startsWith("/download") -> handleDownload(session)
                 uri == "/delete" && method == Method.POST -> handleDelete(session)
                 uri == "/move" && method == Method.POST -> handleMove(session)
+                uri == "/download-zip" && method == Method.POST -> handleDownloadZip(session)
                 uri == "/" || uri == "/index.html" -> serveFileBrowser()
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
             }
@@ -335,7 +338,7 @@ body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--text)
 .file-link{color:var(--text);text-decoration:none;display:flex;align-items:center;gap:6px}
 .file-link:hover{color:var(--blue)}
 .empty{text-align:center;padding:48px 16px;color:var(--muted)}
-.upload-area{padding:12px 16px;border-bottom:1px solid var(--border);text-align:center;cursor:pointer;color:var(--muted);font-size:12px}.upload-area:hover{color:var(--blue)}
+.upload-area{padding:12px 16px;border-bottom:1px solid var(--border);text-align:center;cursor:pointer;color:var(--muted);font-size:12px;transition:.2s}.upload-area:hover,.upload-area.dragover{color:var(--blue);background:rgba(88,166,255,.08)}
 .upload-area input{display:none}
 .progress{height:3px;background:var(--border);overflow:hidden;display:none}.progress-fill{height:100%;background:var(--blue);width:0;transition:width .3s}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);padding:8px 20px;border-radius:20px;font-size:12px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.4);opacity:0;transition:opacity .3s;max-width:90vw}
@@ -358,13 +361,14 @@ body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--text)
 <span class="sep"></span>
 <button class="btn btn-blue btn-sm" onclick="reload()">Refresh</button>
 </div>
-<div class="upload-area" onclick="document.getElementById('fileInput').click()">
+<div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
 <input type="file" id="fileInput" multiple onchange="handleUploadFiles(event)">
 Click to upload files to current directory
 <div class="progress" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
 </div>
 <div class="toolbar">
 <span class="check-all"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"> All</span>
+<button class="btn btn-blue btn-sm" id="downloadBtn" onclick="downloadSelected()" style="display:none">Download ZIP</button>
 <button class="btn btn-danger btn-sm" id="deleteBtn" onclick="deleteSelected()" style="display:none">Delete</button>
 <button class="btn btn-warn btn-sm" id="moveBtn" onclick="showMoveModal()" style="display:none">Move</button>
 </div>
@@ -390,6 +394,7 @@ function reload(){loadFiles(currentDir)}
 function updateBar(){
 document.getElementById('deleteBtn').style.display=selected.size?'inline-flex':'none';
 document.getElementById('moveBtn').style.display=selected.size?'inline-flex':'none';
+document.getElementById('downloadBtn').style.display=selected.size?'inline-flex':'none';
 }
 function toggleSelectAll(){
 var boxes=document.querySelectorAll('.file-cb:not(.ignore)');
@@ -458,6 +463,15 @@ var paths=Array.from(selected);
 fetch('/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:paths})})
 .then(function(){showToast('Deleted');selected.clear();reload()});
 }
+function downloadSelected(){
+if(selected.size===0)return;
+showToast('Preparing ZIP...');
+var paths=Array.from(selected);
+fetch('/download-zip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:paths})})
+.then(function(r){if(!r.ok)throw Error('fail');return r.blob()})
+.then(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='wft-download.zip';a.click();showToast('Download started');})
+.catch(function(){showToast('Download failed')});
+}
 function showMoveModal(){document.getElementById('moveModal').classList.add('show');document.getElementById('moveDest').value=currentDir}
 function closeMoveModal(){document.getElementById('moveModal').classList.remove('show')}
 function executeMove(){
@@ -469,6 +483,10 @@ fetch('/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JS
 function formatSize(b){if(!b||b===0)return'';var u=['B','KB','MB','GB'];var i=Math.floor(Math.log(b)/Math.log(1024));return(b/Math.pow(1024,i)).toFixed(1)+' '+u[i]}
 var tt;
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){t.classList.remove('show')},2500)}
+var ua=document.getElementById('uploadArea');
+ua.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();ua.classList.add('dragover')});
+ua.addEventListener('dragleave',function(e){e.preventDefault();e.stopPropagation();ua.classList.remove('dragover')});
+ua.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();ua.classList.remove('dragover');var files=e.dataTransfer.files;if(files.length)uploadFiles(files)});
 loadFiles(currentDir);
 </script>
 </body>
@@ -622,6 +640,54 @@ loadFiles(currentDir);
                 return newFixedLengthResponse(Response.Status.OK, "text/plain", "Moved $count items")
             } catch (e: Exception) {
                 return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Error: ${e.message}")
+            }
+        }
+
+        private fun handleDownloadZip(session: IHTTPSession): Response {
+            try {
+                val body = session.inputStream.bufferedReader().readText()
+                val json = org.json.JSONObject(body)
+                val paths = json.getJSONArray("paths")
+                if (paths.length() == 0) {
+                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "No files selected")
+                }
+                val zipFile = File(cacheDir, "wft_download_${System.currentTimeMillis()}.zip")
+                FileOutputStream(zipFile).use { fos ->
+                    ZipOutputStream(fos).use { zos ->
+                        for (i in 0 until paths.length()) {
+                            val path = paths.getString(i)
+                            val file = File(path)
+                            if (file.exists() && file.isFile && file.absolutePath.startsWith(serverBaseDir.absolutePath)) {
+                                val entry = ZipEntry(file.name)
+                                zos.putNextEntry(entry)
+                                FileInputStream(file).use { it.copyTo(zos) }
+                                zos.closeEntry()
+                            } else if (file.exists() && file.isDirectory && file.absolutePath.startsWith(serverBaseDir.absolutePath)) {
+                                addDirToZip(file, file.name + "/", zos)
+                            }
+                        }
+                    }
+                }
+                val response = newChunkedResponse(Response.Status.OK, "application/zip", FileInputStream(zipFile))
+                response.addHeader("Content-Disposition", "attachment; filename=\"wft-download.zip\"")
+                return response
+            } catch (e: Exception) {
+                Log.e(TAG, "ZIP download failed: ${e.message}")
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error: ${e.message}")
+            }
+        }
+
+        private fun addDirToZip(dir: File, prefix: String, zos: ZipOutputStream) {
+            zos.putNextEntry(ZipEntry(prefix))
+            zos.closeEntry()
+            dir.listFiles()?.forEach { file ->
+                if (file.isDirectory) {
+                    addDirToZip(file, prefix + file.name + "/", zos)
+                } else {
+                    zos.putNextEntry(ZipEntry(prefix + file.name))
+                    FileInputStream(file).use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
             }
         }
 

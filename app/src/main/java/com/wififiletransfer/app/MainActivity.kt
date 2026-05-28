@@ -726,7 +726,7 @@ loadFiles(currentDir);
                 val ipv4 = addresses.find { it.first == "IPv4" }?.second ?: ""
                 val url = if (ipv4.isNotEmpty()) "http://$ipv4:$serverPort" else ""
                 val writer = QRCodeWriter()
-                val bitMatrix = writer.encode(url, com.google.zxing.BarcodeFormat.QR_CODE, 300, 300)
+                val bitMatrix = writer.encode(url, BarcodeFormat.QR_CODE, 300, 300)
                 val bitmap = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
                 for (x in 0 until 300) {
                     for (y in 0 until 300) {
@@ -737,7 +737,9 @@ loadFiles(currentDir);
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
                 val pngBytes = baos.toByteArray()
                 val stream = java.io.ByteArrayInputStream(pngBytes)
-                return newFixedLengthResponse(Response.Status.OK, "image/png", stream, pngBytes.size.toLong())
+                val response = newFixedLengthResponse(Response.Status.OK, "image/png", stream, pngBytes.size.toLong())
+                response.addHeader("Cache-Control", "no-cache")
+                return response
             } catch (e: Exception) {
                 Log.e(TAG, "QR generation failed: ${e.message}")
                 return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error generating QR")

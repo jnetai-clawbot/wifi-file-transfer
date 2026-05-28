@@ -470,7 +470,7 @@
 
     function openAbout() {
         if (dom.versionDisplay) {
-            dom.versionDisplay.textContent = 'Version 1.0.5';
+            dom.versionDisplay.textContent = 'Version 1.0.8';
         }
         dom.aboutModal.classList.add('active');
     }

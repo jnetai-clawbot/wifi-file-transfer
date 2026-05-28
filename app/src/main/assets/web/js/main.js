@@ -471,7 +471,7 @@
 
     function openAbout() {
         if (dom.versionDisplay) {
-            dom.versionDisplay.textContent = 'Version 0.1.1';
+            dom.versionDisplay.textContent = 'Version 1.0.2';
         }
         dom.aboutModal.classList.add('active');
     }
@@ -606,7 +606,7 @@
         dom.selectFilesBtn.addEventListener('click', () => dom.fileInput.click());
         dom.fileInput.addEventListener('change', handleUpload);
         dom.downloadAllBtn.addEventListener('click', () => {
-            window.location.href = '/download-zip';
+            showToast('Download all as ZIP not available in this version');
         });
     }
 

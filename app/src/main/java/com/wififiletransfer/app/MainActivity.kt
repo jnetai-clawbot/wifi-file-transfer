@@ -227,6 +227,7 @@ class MainActivity : AppCompatActivity() {
                 uri == "/login" && method == Method.POST -> handleLogin(session)
                 uri.startsWith("/api/info") -> handleApiInfo()
                 uri.startsWith("/api/list") -> handleListDir(session)
+                uri == "/list" -> handleListDir(session)
                 uri.startsWith("/api/status") -> handleApiStatus()
                 uri == "/upload" && method == Method.POST -> handleUpload(session, dir)
                 uri.startsWith("/download") -> handleDownload(session)
@@ -665,7 +666,7 @@ loadFiles(currentDir);
             val nextStart = findSubarray(bytes, boundaryBytes, start + boundaryBytes.size)
             if (nextStart == -1) break
             val section = bytes.copyOfRange(start + boundaryBytes.size, nextStart)
-            if (section.isNotEmpty() && section[0] == '-'.toByte()) break
+            if (section.isNotEmpty() && section[0] == '-'.code.toByte()) break
             val sectionStr = String(section, Charsets.UTF_8)
             val headerEnd = sectionStr.indexOf("\r\n\r\n")
             if (headerEnd == -1) { pos = nextStart; continue }
@@ -749,7 +750,7 @@ loadFiles(currentDir);
         @JavascriptInterface
         fun vibrate(duration: Long) {
             try {
-                val vibrator = activity.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                val vibrator = activity.getSystemService(android.os.Vibrator::class.java)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     vibrator.vibrate(android.os.VibrationEffect.createOneShot(duration, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
                 } else {
